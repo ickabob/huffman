@@ -30,21 +30,30 @@ import Test.HUnit
   
 type Symbol = Char
               
-type Count = Integer
+type Count = Int
 
 type Message = [Symbol]
 
-data Tree v a = Leaf v a
-                | Branch v (Tree v a) (Tree v a)
-                  deriving(Show,Read,Eq)
+data WeightedSet a =  WeightedSet {weight::Int, symbols :: Set a} deriving (Read,Eq,Ord)
+                                                          
+instance (Show a) => Show (WeightedSet a) where
+  show x = "(" ++ show (weight x) ++ "," ++ show (Set.toList $ symbols x) ++ ")"
+                                                          
+data HTree a = HLeaf { weightedSet :: WeightedSet a}
+             | HBranch { weightedSet :: WeightedSet a,
+                         left, right :: HTree a}
+               deriving(Read,Eq,Ord)
 
-data HTree a = HLeaf (Int, Set a)
-             | HBranch (Int, Set a) (HTree a) (HTree a)
-               deriving(Show,Read,Eq)
+instance (Show a) => Show (HTree a) where
+  show (HLeaf wset) = "{Leaf: " ++ show wset ++ "}"
+  show (HBranch wset left right) = "{Branch: " ++ show wset ++ show left ++ show right ++ "}"
 
-instance Ord HTree where
-  
-                       
+data Bit = Zero | One
+         deriving (Read, Eq)
+instance Show Bit where
+  show One = show 1
+  show Zero  = show 0
+                                   
 _partition :: Ord a =>  [a] -> [[a]]
 _partition = group . sort
 
@@ -59,42 +68,46 @@ countSymbols str = zip counts symbols
    where counts = _counts str
          symbols = _symbols str
 
-constuctLeaf count symbol  = HLeaf (count, Set.insert symbol $ Set.empty)
+constuctLeaf :: (Ord a) => Int -> a -> HTree a
+constuctLeaf count symbol  = HLeaf $ WeightedSet count (Set.singleton symbol)
+
+mergeTrees ::(Ord a)=> HTree a -> HTree a -> HTree a
+mergeTrees t1 t2 = HBranch mergedSet t1 t2
+  where
+    mergedSet = _merge (weightedSet t1) (weightedSet t2)
+    _merge x y  = let newWeights = weight x + weight y
+                      newSymbols = Set.union (symbols x) (symbols y)
+                  in WeightedSet newWeights newSymbols
 
 symbolForest :: [Symbol] -> [HTree Symbol]                             
-symbolForest str =  List.map (\(c,s)-> constuctLeaf c s) $ countSymbols str
+symbolForest str = List.map (\(c,s)-> constuctLeaf c s) $ countSymbols str
 
+encodingTree :: Set (HTree Symbol) -> HTree Symbol
+encodingTree f 
+  | Set.null f      = error "Cannot construct Huffman Tree form the empty set."
+  | Set.size f == 2 = merged 
+  | Set.size f >= 2 = encodingTree $ Set.insert merged modified'
+  where
+    (min1,modified) = Set.deleteFindMin f
+    (min2,modified') = Set.deleteFindMin modified
+    merged = mergeTrees min1 min2
 
+encode :: Message -> HTree Symbol  -> [Bit]
+encode "" tree = []  
+encode mes tree = List.concatMap (encodeSymbol $ tree) mes
 
--- encodingTree :: HForest -> HTree
--- encodingTree f 
---   |Set.null f       = error "Cannot construct Huffman Tree form the empty set."
---   | Set.size f == 2 = merged 
---   | Set.size f >= 2 = encodingTree $ Set.insert merged modified'
---   where
---     (max1,modified) = Set.deleteFindMax f
---     (max2,modified') = Set.deleteFindMax modified
---     merged = merge2 max1 max2
+encodeSymbol :: HTree Symbol -> Symbol -> [Bit]
+encodeSymbol tree symbol = if Set.member symbol (symbolset tree)
+                        then choosedirection tree
+                        else error "Symbol is not valid, it does not exist in encoding tree."
+  where                          
+    symbolset tree' = symbols $ weightedSet tree'
+    choosedirection (HLeaf x) = []
+    choosedirection tree =
+      case Set.member symbol $ symbolset (left tree) of
+        True -> One : (choosedirection (left tree))
+        False -> Zero : (choosedirection (right tree))
 
--- merge2 :: HTree -> HTree -> HTree
--- merge2 h1@(Leaf f1) h2@(Leaf f2) =
---   Branch { weight = count f1 + count f2, left = h1, right = h2}
--- merge2 h1@(Leaf f1) h2@(Branch _ _ _) =
---   Branch { weight = count f1 + weight h2, left = h1, right = h2}
--- merge2 h1@(Branch _ _ _) h2@(Leaf f1) =
---     Branch { weight = weight h1 + count f1, left = h1, right = h2}
--- merge2 h1@(Branch _ _ _) h2@(Branch _ _ _) =
---     Branch { weight = weight h1 + weight h2, left = h1, right = h2}
-
--- encode :: Message -> HTree -> [Bit]
--- encode "" tree = []  
--- encode mes tree = Data.List.concatMap (encodeSymbol $ tree) mes
-
--- encodeSymbol :: HTree -> Symbol -> [Bit]
-
--- encodeSymbol tree sym =
---   case tree of
---     Leaf f -> if symbol f == sym then [] else error "symbol not found in encoding tree"
---     Branch w left right ->/ 
+   
   
 
